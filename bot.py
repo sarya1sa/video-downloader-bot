@@ -1,4 +1,5 @@
 import os
+import time
 import uuid
 import asyncio
 import logging
@@ -218,24 +219,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         if quality == "audio":
-            with open(filepath, "rb") as f:
-                await update.message.reply_audio(
-                    audio=f,
-                    caption="🎵 تم التحميل ✅",
-                )
+            await update.message.reply_audio(
+                audio=filepath,
+                caption="🎵 تم التحميل ✅",
+            )
         else:
-            with open(filepath, "rb") as f:
-                await update.message.reply_video(
-                    video=f,
-                    supports_streaming=True,
-                    caption=f"✅ تم التحميل من {platform}\n"
-                           "اضغط على الفيديو ← Save Video للحفظ في ألبوم الصور",
-                )
+            await update.message.reply_video(
+                video=filepath,
+                supports_streaming=True,
+                caption=f"✅ تم التحميل من {platform}\n"
+                       "اضغط على الفيديو ← Save Video للحفظ في ألبوم الصور",
+            )
         
         await status_msg.delete()
     except Exception as e:
         logger.error(f"Upload error: {e}")
-        await status_msg.edit_text(f"❌ خطأ في الرفع: {str(e)[:100]}")
+        try:
+            await status_msg.edit_text(f"❌ خطأ في الرفع: {str(e)[:100]}")
+        except:
+            pass
     finally:
         await cleanup_file(Path(filepath))
 
@@ -257,9 +259,7 @@ def run_health_server():
     logger.info(f"Health server listening on port {port}")
     server.serve_forever()
 
-def main():
-    health_thread = threading.Thread(target=run_health_server, daemon=True)
-    health_thread.start()
+def run_bot():
     app = Application.builder().token(BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
@@ -280,6 +280,17 @@ def main():
         )
     else:
         app.run_polling(allowed_updates=["message", "callback_query"])
+
+def main():
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+    
+    while True:
+        try:
+            run_bot()
+        except Exception as e:
+            logger.error(f"Bot crashed: {e}", exc_info=True)
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
