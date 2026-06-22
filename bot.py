@@ -2,6 +2,8 @@ import os
 import uuid
 import asyncio
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -240,7 +242,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def log_message(self, format, *args):
+        pass
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    logger.info(f"Health server listening on port {port}")
+    server.serve_forever()
+
 def main():
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
     app = Application.builder().token(BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
