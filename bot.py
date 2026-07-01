@@ -10,6 +10,23 @@ from concurrent.futures import ThreadPoolExecutor
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+import subprocess
+import sys
+
+def update_ytdlp():
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-U", "yt-dlp"],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode == 0:
+            return True
+        else:
+            return False
+    except:
+        return False
+
+HAS_NEW_YTDLP = update_ytdlp()
 import yt_dlp
 
 logging.basicConfig(
@@ -70,9 +87,16 @@ def download_with_ytdlp(url: str, output_template: str, quality: str = "best", u
         "outtmpl": output_template,
         "quiet": True,
         "no_warnings": True,
-        "ignoreerrors": True,
+        "ignoreerrors": False,
         "extract_flat": False,
         "overwrites": True,
+        "extractor_retries": 3,
+        "retries": 5,
+        "fragment_retries": 5,
+        "retry_sleep": 3,
+        "throttledratelimit": None,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
     }
     
     if quality == "audio":
@@ -80,12 +104,13 @@ def download_with_ytdlp(url: str, output_template: str, quality: str = "best", u
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
         }]
+        ydl_opts["format"] = "bestaudio/best"
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             if info is None:
-                return None, "فشل في جلب معلومات الفيديو"
+                return None, "تعذر جلب معلومات الفيديو. قد يكون الرابط خاصاً أو محذوفاً."
             
             if quality == "audio":
                 filepath = str(Path(output_template).with_suffix(".mp3").resolve())
@@ -102,19 +127,25 @@ def download_with_ytdlp(url: str, output_template: str, quality: str = "best", u
                 if matches:
                     filepath = str(matches[0])
                 else:
-                    return None, "لم يتم العثور على الفيديو بعد التحميل"
+                    return None, "تم التحميل لكن لم يتم العثور على الملف."
             
             return filepath, None
     except Exception as e:
         error_msg = str(e)
         if "Private video" in error_msg:
-            return None, "الفيديو خاص أو مخفي"
+            return None, "الفيديو خاص أو مخفي."
         elif "Video unavailable" in error_msg:
-            return None, "الفيديو غير متاح"
+            return None, "الفيديو غير متاح أو محذوف."
         elif "Sign in" in error_msg or "login" in error_msg:
             return None, "يتطلب تسجيل دخول. جرب رابط آخر."
+        elif "HTTP Error" in error_msg:
+            return None, "خطأ في الاتصال. حاول مرة أخرى."
+        elif "copyright" in error_msg.lower():
+            return None, "الفيديو محظور بحقوق النشر."
+        elif "age" in error_msg.lower() or "restrict" in error_msg.lower():
+            return None, "الفيديو مقيد بعمر (18+)."
         else:
-            logger.error(f"yt-dlp error: {error_msg[:200]}")
+            logger.error(f"yt-dlp error: {error_msg[:300]}")
             return None, f"خطأ: {error_msg[:150]}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
